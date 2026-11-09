@@ -141,3 +141,8 @@ textarea.in{min-height:70px;resize:vertical}
 @media (display-mode: standalone){ .helpbtn{display:none} }
 @media(max-width:420px){.top h1{font-size:21px}}
 .nav[hidden]{display:none}
+/* Free Netlify plans show a "Powered by Netlify" badge (about 190x64) in the bottom-right corner.
+   When it's there, give the tab bar a strip underneath so the badge never covers the tabs. */
+body:has(#nl-badge-frame) .nav{padding-bottom:calc(70px + env(safe-area-inset-bottom))}
+body:has(#nl-badge-frame) main{padding-bottom:180px}
+body:has(#nl-badge-frame) .toast{bottom:150px}
