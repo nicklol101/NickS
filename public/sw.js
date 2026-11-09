@@ -1,8 +1,8 @@
 // Christmas Lists by Nick: service worker.
 // Caches the app shell so it opens fast and works as an installed app.
 // API calls always go to the network (live data is never cached).
-const CACHE = 'lbn-v2';
-const SHELL = ['/', '/index.html', '/styles.css', '/app.js', '/manifest.webmanifest', '/icons/icon-192.png', '/icons/icon-512.png'];
+const CACHE = 'lbn-v3';
+const SHELL = ['/', '/index.html', '/styles.css', '/app.js', '/demo.js', '/manifest.webmanifest', '/icons/icon-192.png', '/icons/icon-512.png'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting()));
