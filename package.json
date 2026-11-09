@@ -1,0 +1,11 @@
+{
+  "name": "christmas-lists-by-nick",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Family Christmas wish lists with secret gift check-offs. Runs on Netlify (Functions + Blobs).",
+  "type": "module",
+  "engines": { "node": ">=18" },
+  "dependencies": {
+    "@netlify/blobs": "^8.1.0"
+  }
+}
