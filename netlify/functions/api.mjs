@@ -78,6 +78,7 @@ function hashPw(pw, salt = crypto.randomBytes(16).toString("hex")) {
   return { salt, hash: crypto.scryptSync(pw, salt, 64).toString("hex") };
 }
 function checkPw(pw, user) {
+  if (!user.salt || !user.hash) return false; // Google-only accounts have no password
   const h = crypto.scryptSync(pw, user.salt, 64);
   const want = Buffer.from(user.hash, "hex");
   return h.length === want.length && crypto.timingSafeEqual(h, want);
@@ -193,6 +194,7 @@ async function route(req) {
   if (method !== "GET" && req.headers.get("x-app") !== "listsbynick") return fail(403, "Bad request.");
 
   if (path === "/health") return json({ ok: true });
+  if (method === "GET" && path === "/config") return json({ googleClientId: process.env.GOOGLE_CLIENT_ID || null });
 
   // Public image serving (ids are long and random; cookie also required).
   if (method === "GET" && seg[0] === "img" && seg[1]) {
@@ -225,6 +227,31 @@ async function route(req) {
     const ref = await getJSON("emails/" + emailKey(email));
     const user = ref && (await getJSON("users/" + ref.id));
     if (!user || !checkPw(typeof b.password === "string" ? b.password : "", user)) throw new HttpError(401, "Wrong email or password.");
+    return json({ ok: true }, 200, { "set-cookie": sessionCookie(req, await sign(user.id, user.sv || 0), SESSION_DAYS * 86400) });
+  }
+  if (method === "POST" && path === "/google") {
+    const clientId = process.env.GOOGLE_CLIENT_ID;
+    if (!clientId) throw new HttpError(400, "Google sign-in isn't set up yet.");
+    const credential = str((await body(req)).credential, 4000);
+    if (!credential) throw new HttpError(400, "Google sign-in failed. Try again.");
+    // Ask Google to check the token's signature and expiry for us.
+    const r = await fetch("https://oauth2.googleapis.com/tokeninfo?id_token=" + encodeURIComponent(credential));
+    const g = r.ok ? await r.json() : null;
+    const issuerOk = g && (g.iss === "accounts.google.com" || g.iss === "https://accounts.google.com");
+    if (!g || g.aud !== clientId || !issuerOk || Number(g.exp) * 1000 < now()) throw new HttpError(401, "Google sign-in failed. Try again.");
+    if (!(g.email_verified === true || g.email_verified === "true") || !g.email || !g.sub) throw new HttpError(401, "Your Google email isn't verified.");
+    const email = String(g.email).toLowerCase();
+    let ref = (await getJSON("google/" + g.sub)) || (await getJSON("emails/" + emailKey(email)));
+    let user = ref && (await getJSON("users/" + ref.id));
+    if (!user) {
+      const id = newId();
+      user = { id, email, name: str(g.given_name || g.name || email.split("@")[0], 40), contacts: [{ type: email.endsWith("@gmail.com") ? "Gmail" : "Other email", value: email }], createdAt: now() };
+      await putJSON("users/" + id, user);
+      await putJSON("emails/" + emailKey(email), { id });
+      if (!(await getJSON("config/admin"))) await putJSON("config/admin", { id });
+    }
+    if (user.google !== g.sub) { user = { ...user, google: g.sub }; await putJSON("users/" + user.id, user); }
+    await putJSON("google/" + g.sub, { id: user.id });
     return json({ ok: true }, 200, { "set-cookie": sessionCookie(req, await sign(user.id, user.sv || 0), SESSION_DAYS * 86400) });
   }
   if (method === "POST" && path === "/logout") {
@@ -269,7 +296,8 @@ async function route(req) {
   }
   if (method === "POST" && path === "/password") {
     const b = await body(req);
-    if (!checkPw(typeof b.current === "string" ? b.current : "", me)) throw new HttpError(400, "Current password is wrong.");
+    // Google-only accounts can add a password without knowing an old one.
+    if (me.hash && !checkPw(typeof b.current === "string" ? b.current : "", me)) throw new HttpError(400, "Current password is wrong.");
     if (typeof b.next !== "string" || b.next.length < 6) throw new HttpError(400, "New password needs at least 6 characters.");
     const sv = (me.sv || 0) + 1;
     await putJSON("users/" + uid, { ...me, ...hashPw(b.next), sv, mustChangePassword: false });
